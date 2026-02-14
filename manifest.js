@@ -1,7 +1,7 @@
 {
   "name": "ACOUSTIX Gitarrendiagramm Generator",
   "short_name": "Akkord App",
-  "start_url": "./index.html",
+  "start_url": "/index.html",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#000000",
@@ -18,5 +18,6 @@
     }
   ]
 }
+
 
 
