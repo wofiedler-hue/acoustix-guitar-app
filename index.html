@@ -1,0 +1,336 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<title>Gitarren Akkorddiagramm</title>
+
+<link href="https://fonts.googleapis.com/css2?family=Roboto&family=Open+Sans&family=Lato&family=Montserrat&family=Merriweather&display=swap" rel="stylesheet">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#000000">
+
+<style>
+body{
+  margin:0;
+  background:#eaeaea;
+  font-family:Arial,sans-serif;
+}
+.app{
+  max-width:1000px;
+  margin: 0 auto 40px;
+  background:#fff;
+  padding:30px;
+  display:grid;
+  grid-template-columns:320px 1fr;
+  gap:40px;
+  box-shadow:0 0 20px rgba(0,0,0,0.15);
+}
+label{font-weight:bold;margin-top:10px;display:block}
+input,select,button{
+  width:100%;
+  font-size:16px;
+  padding:6px;
+  margin-bottom:6px;
+}
+input[type="range"]{padding:0}
+svg{border:1px solid #999;background:white}
+.offsetValue{font-size:14px;text-align:right;color:#555}
+
+.right-column {
+  margin-top: 100px;
+
+  position: sticky;
+  top: 80px;          /* Abstand zum oberen Rand beim Scrollen */
+  align-self: flex-start; /* wichtig bei Flex-Layouts */
+}
+
+#diagram {
+  min-width: 200px;
+  height: auto;
+}
+
+</style>
+</head>
+
+<body>
+  <div style="margin: 20px auto 0 auto; max-width:1000px; text-align: center"><h1>ACOUSTIX GUITARS Gitarrendiagramm Generator</h1></div>
+<div class="app">
+
+<!-- LINKS -->
+<div>
+  <label>Akkord-Preset</label>
+  <select id="presetSelect">
+    <option value="">– Preset wählen –</option>
+  </select>
+
+  <label>Akkordname</label>
+  <input id="nameInput" value="">
+
+  <label>Saiten (z.B. x 3/2 2/2 0 0 3/3)</label>
+  <input id="chordInput" value="">
+
+  <label>Größe</label>
+  <select id="sizeSelect">
+    <option value="1">1</option>
+    <option value="1.25" selected>2</option>
+    <option value="1.5">3</option>
+    <option value="1.75">4</option>
+    <option value="2">5</option>
+  </select>
+
+  <label>Schriftart</label>
+  <select id="fontSelect">
+    <option>Roboto</option>
+    <option>Open Sans</option>
+    <option>Lato</option>
+    <option>Montserrat</option>
+    <option>Merriweather</option>
+  </select>
+
+  <label>Schriftgröße</label>
+  <select id="fontSizeSelect">
+    <option>14</option>
+    <option selected>16</option>
+    <option>18</option>
+    <option>20</option>
+    <option>22</option>
+    <option>24</option>
+    <option>26</option>
+    <option>28</option>
+    <option>32</option>
+  </select>
+
+  <label>Barre – Bund</label>
+  <input id="barreFret">
+
+  <label>Barre – Startsaite</label>
+  <select id="barreStart">
+    <option value="">–</option>
+    <option value="6">6</option>
+    <option value="5">5</option>
+    <option value="4">4</option>
+    <option value="3">3</option>
+    <option value="2">2</option>
+  </select>
+
+  <label>Zahlen vertikal verschieben</label>
+  <input id="offsetInput" type="range" min="-0.3" max="0.3" step="0.01" value="0">
+  <div class="offsetValue" id="offsetValue">0.00</div>
+
+  <label>x / 0 vertikal verschieben</label>
+  <input id="xoOffsetInput" type="range" min="-30" max="30" step="1" value="0">
+  <div class="offsetValue" id="xoOffsetValue">0</div>
+
+  <label>Akkordname vertikal verschieben</label>
+  <input id="nameOffsetInput" type="range" min="-40" max="40" step="1" value="0">
+  <div class="offsetValue" id="nameOffsetValue">0</div>
+
+  <label>Anzahl der Bünde</label>
+  <input id="fretCountInput" type="range" min="3" max="12" step="1" value="6">
+  <div class="offsetValue" id="fretCountValue">6</div>
+
+  <button onclick="clearDiagram()">Diagramm leeren</button>
+
+  <button onclick="exportSVG()">SVG exportieren</button>
+  <button onclick="exportPNG()">PNG (300dpi)</button>
+</div>
+
+
+<!-- RECHTS -->
+<div class="right-column">
+  <svg id="diagram"></svg>
+</div>
+
+</div>
+
+<script>
+const svg=document.getElementById("diagram");
+
+const FONT_BASELINE_FIX={
+  "Roboto":0.32,
+  "Open Sans":0.30,
+  "Lato":0.28,
+  "Montserrat":0.34,
+  "Merriweather":0.38
+};
+
+/* ================= PRESETS ================= */
+
+fetch("akkorde.txt")
+  .then(r=>r.text())
+  .then(t=>{
+    t.split("\n").forEach(line=>{
+      line=line.trim();
+      if(!line || line.startsWith("#")) return;
+      const opt=document.createElement("option");
+      opt.value=line;
+      opt.textContent=line.split("|")[0];
+      presetSelect.appendChild(opt);
+    });
+  });
+
+presetSelect.addEventListener("change",()=>{
+  if(!presetSelect.value) return;
+  const [name,strings,barreFretVal,barreStartVal]=presetSelect.value.split("|");
+  nameInput.value=name||"";
+  chordInput.value=strings||"";
+  barreFret.value=barreFretVal||"";
+  barreStart.value=barreStartVal||"";
+  update();
+});
+
+/* ================= DIAGRAMM ================= */
+
+function drawDiagram(){
+  const d=getData();
+  const s=d.size;
+
+  const sx=40*s, sy=60*s, sg=22*s, fg=28*s;
+  const w=sx*2+sg*5;
+  const h=sy+fg*d.fretCount+20*s;
+
+  svg.innerHTML="";
+  svg.setAttribute("width",w);
+  svg.setAttribute("height",h);
+  svg.setAttribute("viewBox",`0 0 ${w} ${h}`);
+
+  drawText(d.name,sx,sy-25*s+d.nameOffset*s,d.fontSize*s+4,"start",d.font);
+
+  for(let i=0;i<6;i++) drawLine(sx+i*sg,sy,sx+i*sg,sy+fg*d.fretCount);
+  for(let f=0;f<=d.fretCount;f++){
+    const y=sy+f*fg;
+    drawLine(sx,y,sx+sg*5,y);
+    if(f===0) drawLine(sx,y+4*s,sx+sg*5,y+4*s);
+  }
+
+  const off=(FONT_BASELINE_FIX[d.font]||0.32)+d.userOffset;
+
+  d.strings.forEach((o,i)=>{
+    const x=sx+i*sg;
+    if(o==="x"||o===0)
+      drawText(o==="x"?"X":"O",x,sy-5*s+d.xoOffset*s,d.fontSize*s,"middle",d.font);
+    if(o?.fret)
+      drawText(o.finger,x,sy+(o.fret-off)*fg,d.fontSize*s+4,"middle",d.font);
+  });
+
+  if(d.barreFret && d.barreStart){
+    const y=sy+(d.barreFret-off)*fg;
+    const xs=sx+(6-d.barreStart)*sg;
+    const xe=sx+5*sg;
+    drawText("1",xs,y,d.fontSize*s+4,"middle",d.font);
+    drawText("1",xe,y,d.fontSize*s+4,"middle",d.font);
+    drawText("Barré",(xs+xe)/2,y,d.fontSize*s-0,"middle",d.font);
+  }
+}
+
+function clearDiagram(){
+  nameInput.value="";
+  chordInput.value="";
+  barreFret.value="";
+  barreStart.value="";
+  update();
+}
+
+function drawLine(x1,y1,x2,y2){
+  const l=document.createElementNS("http://www.w3.org/2000/svg","line");
+  l.setAttribute("x1",x1);
+  l.setAttribute("y1",y1);
+  l.setAttribute("x2",x2);
+  l.setAttribute("y2",y2);
+  l.setAttribute("stroke","black");
+  l.setAttribute("stroke-width","1.5");
+  svg.appendChild(l);
+}
+
+function drawText(t,x,y,s,a,f){
+  const e=document.createElementNS("http://www.w3.org/2000/svg","text");
+  e.setAttribute("x",x);
+  e.setAttribute("y",y);
+  e.setAttribute("font-size",s);
+  e.setAttribute("font-family",f);
+  e.setAttribute("font-weight","bold");
+  e.setAttribute("text-anchor",a);
+  e.textContent=t;
+  svg.appendChild(e);
+}
+
+function getData(){
+  return{
+    name:nameInput.value,
+    strings:chordInput.value.split(/\s+/).map(v=>{
+      if(v==="x")return"x";
+      if(v==="0")return 0;
+      if(v.includes("/")){
+        const [f,fing]=v.split("/").map(Number);
+        return{fret:f,finger:fing};
+      }
+      return null;
+    }),
+    size:+sizeSelect.value,
+    font:fontSelect.value,
+    fontSize:+fontSizeSelect.value,
+    barreFret:+barreFret.value||null,
+    barreStart:+barreStart.value||null,
+    userOffset:+offsetInput.value,
+    xoOffset:+xoOffsetInput.value,
+    nameOffset:+nameOffsetInput.value,
+    fretCount:+fretCountInput.value
+  };
+}
+
+function exportSVG(){
+  const xml=new XMLSerializer().serializeToString(svg);
+  download(new Blob([xml],{type:"image/svg+xml"}),"akkord.svg");
+}
+
+async function exportPNG(){
+  await document.fonts.ready;
+  const xml=new XMLSerializer().serializeToString(svg);
+  const img=new Image();
+  img.onload=()=>{
+    const sc=300/96;
+    const c=document.createElement("canvas");
+    c.width=img.width*sc;
+    c.height=img.height*sc;
+    const ctx=c.getContext("2d");
+    ctx.fillStyle="white";
+    ctx.fillRect(0,0,c.width,c.height);
+    ctx.scale(sc,sc);
+    ctx.drawImage(img,0,0);
+    c.toBlob(b=>download(b,"akkord.png"));
+  };
+  img.src="data:image/svg+xml;base64,"+btoa(unescape(encodeURIComponent(xml)));
+}
+
+function download(b,n){
+  const a=document.createElement("a");
+  a.href=URL.createObjectURL(b);
+  a.download=n;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+function update(){
+  offsetValue.textContent=(+offsetInput.value).toFixed(2);
+  xoOffsetValue.textContent=xoOffsetInput.value;
+  nameOffsetValue.textContent=nameOffsetInput.value;
+  fretCountValue.textContent=fretCountInput.value;
+  drawDiagram();
+}
+
+[
+ "nameInput","chordInput","sizeSelect","fontSelect","fontSizeSelect",
+ "barreFret","barreStart","offsetInput","xoOffsetInput",
+ "nameOffsetInput","fretCountInput"
+].forEach(id=>document.getElementById(id).addEventListener("input",update));
+
+update();
+</script>
+
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js");
+}
+</script>
+
+</body>
+</html>
